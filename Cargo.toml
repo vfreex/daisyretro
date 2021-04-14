@@ -8,3 +8,7 @@ edition = "2018"
 
 [dependencies]
 sdl2 = "0.34"
+lazy_static = "1.4.0"
+rand = "0.8.0"
+
+[build-dependencies]
