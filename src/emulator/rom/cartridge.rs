@@ -1,5 +1,5 @@
 use std::error::Error;
-use crate::emulator::rom::ines::InesRom;
+use crate::emulator::rom::ines::{InesRom, InesHeader};
 use crate::emulator::rom::mapper::{Mapper, NROMMapper};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -11,6 +11,7 @@ pub struct Cartridge {
     pub chr_rom: Vec<u8>,
     pub mapper_id: u8,
     mapper: Box<dyn Mapper>,
+    pub nt_mirroring: [usize; 4],
 }
 
 impl Cartridge {
@@ -20,14 +21,23 @@ impl Cartridge {
             0 => Box::new(NROMMapper::new(rom.prg_rom.len(), rom.chr_rom.len(), 0)),
             _ => panic!(format!("Unsupported mapper type {}", mapper_id))
         };
+        let nt_mirroring = if rom.header.four_screen_vram_present() {
+            [0, 1, 2, 3]
+        } else if rom.header.vertical_mirroring_set() {
+            [0, 1, 0, 1]
+        } else {
+            [0, 0, 1, 1]
+        };
         Cartridge {
             prg_rom: rom.prg_rom.to_vec(),
             chr_rom: rom.chr_rom.to_vec(),
             mapper_id,
             mapper,
+            nt_mirroring,
         }
     }
 }
+
 #[derive(Debug)]
 pub struct CartridgePrgMemory(Rc<RefCell<Cartridge>>);
 
@@ -48,6 +58,7 @@ impl Memory for CartridgePrgMemory {
         cartridge.mapper.cpu_write(addr, val, &|a, v| Err("Write error".into()))
     }
 }
+
 #[derive(Debug)]
 pub struct CartridgeChrMemory(Rc<RefCell<Cartridge>>);
 

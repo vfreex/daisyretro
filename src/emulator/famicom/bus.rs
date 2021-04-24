@@ -164,8 +164,9 @@ impl CPUBus {
     pub fn ppu_mut(&mut self) -> &mut PPU {
         unsafe { &mut *self.1 }
     }
-    pub fn tick(&mut self, cycles: usize) {
-        self.ppu_mut().run(cycles * 3);
+    pub fn tick(&mut self, cycles: usize) -> Result<(), Box<dyn Error>> {
+        self.ppu_mut().run(cycles * 3)?;
+        Ok(())
     }
 }
 

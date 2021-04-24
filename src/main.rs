@@ -52,7 +52,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
     let mut texture = texture_creator.create_texture_target(PixelFormatEnum::RGB24, 256, 240).unwrap();
 
     let mut rng = rand::thread_rng();
-    let mut frame = [0 as u8; 256 * 240 * 3];
+    let mut frame2 = [0 as u8; 256 * 240 * 3];
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
@@ -109,17 +109,19 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         if remain != 0 {
             println!("Remain cycles {}", remain);
         }
-        famicom.as_mut().ppu_mut().render_screen(&mut frame)?;
+        //
         // for tile_y in 0..30usize {
         //     for tile_x in 0..32usize {
         //         let tile_id = tile_y * 32 + tile_x;
         //         famicom.as_mut().ppu_mut().render_tile(0, tile_id as u8, &mut frame, tile_x * 8, tile_y * 8)?;
         //     }
         // }
-
+        let frame = &famicom.as_mut().ppu_mut().screen;
         let mut update = true;
         if update {
-            texture.update(None, &frame, 256 * 3).unwrap();
+            texture.update(None, frame, 256 * 3).unwrap();
+            //famicom.as_mut().ppu_mut().render_screen(&mut frame2)?;
+            //texture.update(None, &frame2, 256 * 3).unwrap();
             canvas.copy(&texture, None, None).unwrap();
             canvas.present();
         }

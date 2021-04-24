@@ -77,6 +77,13 @@ impl InesHeader {
         }
         (self.flags7 & 0xf0) | (self.flags6 >> 4)
     }
+
+    pub fn four_screen_vram_present(&self) -> bool {
+        self.flags6 & Flags6::FOUR_SCREEN_VRAM_PRESENT as u8 != 0
+    }
+    pub fn vertical_mirroring_set(&self) -> bool {
+        self.flags6 & Flags6::VERTICAL_MIRRORING as u8 != 0
+    }
 }
 
 /// iNES ROM

@@ -24,7 +24,7 @@ pub struct Famicom {
 
 impl Famicom {
     pub fn new() -> Self {
-        let mut famicom = Self {
+        let famicom = Self {
             cpu: CPU::new(),
             ppu: PPU::new(),
             cartridge: Weak::new(),
@@ -35,7 +35,7 @@ impl Famicom {
     }
 
     pub fn new_pinned() -> Pin<Box<Self>> {
-        let mut boxed = Box::pin(Self::new());
+        let boxed = Box::pin(Self::new());
         boxed
     }
 
@@ -82,7 +82,8 @@ impl Famicom {
         this.cpu.bus.add_mapping(0x4020, 0xbfe0, MAPPING_MODE_READ_WRITE, Box::new(CartridgePrgMemory::new(cartridge.clone())));
 
         this.ppu.bus.add_mapping(0x0000, 0x2000, MAPPING_MODE_READ, Box::new(CartridgeChrMemory::new(cartridge.clone())));
-        this.ppu.bus.add_mapping(0x2000, 0x1f00, MAPPING_MODE_READ_WRITE, Box::new(CiRam::new()));
+        let nt_mirroring = cartridge.borrow().nt_mirroring;
+        this.ppu.bus.add_mapping(0x2000, 0x1f00, MAPPING_MODE_READ_WRITE, Box::new(CiRam::new(nt_mirroring)));
         this.ppu.bus.add_mapping(0x3f00, 0x100, MAPPING_MODE_READ_WRITE, Box::new(PaletteTable::new()));
 
         *this.cartridge.borrow_mut() = Rc::downgrade(&cartridge);

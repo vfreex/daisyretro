@@ -645,7 +645,7 @@ impl CPU {
     }
     /// Jump to Subroutine
     fn jsr(&mut self, addr: Ptr) -> Result<(), Box<dyn Error>> {
-        self.push_stack_u16(self.registers.PC.wrapping_sub(1));
+        self.push_stack_u16(self.registers.PC.wrapping_sub(1))?;
         self.registers.PC = addr;
         Ok(())
     }

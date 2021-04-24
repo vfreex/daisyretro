@@ -10,5 +10,6 @@ edition = "2018"
 sdl2 = "0.34"
 lazy_static = "1.4.0"
 rand = "0.8.0"
+bitflags = "1.2"
 
 [build-dependencies]
