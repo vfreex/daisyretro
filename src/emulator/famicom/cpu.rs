@@ -109,12 +109,13 @@ impl CPU {
         self.registers.PC = self.bus.read_u16(Self::IV_RESET).unwrap();
     }
 
-    fn interrupt(&mut self, int_vec: u16) {
+    fn interrupt(&mut self, int_vec: u16) -> Result<usize, Box<dyn Error>> {
         self.push_stack_u16(self.registers.PC).unwrap();
         let p = (self.registers.P.0 | ProcessorStatus::FLAG_ONE) & !ProcessorStatus::FLAG_BREAK;
         self.push_stack(p).unwrap();
         self.registers.P.set_flag_value(ProcessorStatus::FLAG_INTERRUPT_DISABLE, true);
         self.registers.PC = self.bus.read_u16(int_vec).unwrap();
+        Ok(7)
     }
 
     fn address_operand(&mut self, addressing_mode: AddressingMode) -> Result<Ptr, Box<dyn Error>> {
@@ -194,7 +195,7 @@ impl CPU {
             //println!("{:04X}  {}  {}", pc, op.to_string(op1, op2), dump_regs);
             Ok(op)
         } else {
-            Err(format!("Unsupported opcode {} at ${:04x}", opcode, pc).into())
+            Err(format!("Unsupported opcode ${:02x} at ${:04x}", opcode, pc).into())
         }
     }
 
@@ -202,10 +203,14 @@ impl CPU {
         let mut remain = cycle_budget;
         loop {
             if self.bus.nmi_requested() {
+                if remain < 7 {
+                    break;
+                }
                 self.bus.clear_nmi();
-                print!("about to handle NMI");
-                self.interrupt(Self::IV_NMI);
-                //self.bus.tick(2);
+                println!("about to handle NMI");
+                let cycles = self.interrupt(Self::IV_NMI)?;
+                remain -= cycles;
+                self.bus.tick(cycles);
                 return Ok(remain); // FIXME: dummy cycle value
             }
             let &Instruction { addressing_mode, cycles, handler, .. } = self.decode_opcode()?;
@@ -223,9 +228,9 @@ impl CPU {
     pub fn step(&mut self) -> Result<usize, Box<dyn Error>> {
         if self.bus.nmi_requested() {
             self.bus.clear_nmi();
-            self.interrupt(Self::IV_NMI);
-            //self.bus.tick(2);
-            return Ok(1); // FIXME: dummy cycle value
+            self.interrupt(Self::IV_NMI)?;
+            self.bus.tick(7);
+            return Ok(2); // FIXME: dummy cycle value
         }
         let &Instruction { addressing_mode, cycles, handler, .. } = self.decode_opcode()?;
         self.registers.PC = self.registers.PC.wrapping_add(1);

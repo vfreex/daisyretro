@@ -1,6 +1,6 @@
 use std::error::Error;
 use crate::emulator::rom::ines::{InesRom, InesHeader};
-use crate::emulator::rom::mapper::{Mapper, NROMMapper};
+use crate::emulator::rom::mapper::{Mapper, NROMMapper, Mmc1Mapper};
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::emulator::famicom::memory::Memory;
@@ -17,8 +17,9 @@ pub struct Cartridge {
 impl Cartridge {
     pub fn from_ines(rom: &InesRom) -> Self {
         let mapper_id = rom.header.get_mapper_type();
-        let mapper = match mapper_id {
+        let mapper: Box<dyn Mapper> = match mapper_id {
             0 => Box::new(NROMMapper::new(rom.prg_rom.len(), rom.chr_rom.len(), 0)),
+            1 => Box::new(Mmc1Mapper::new(rom.prg_rom.len(), rom.chr_rom.len(), 0)),
             _ => panic!(format!("Unsupported mapper type {}", mapper_id))
         };
         let nt_mirroring = if rom.header.four_screen_vram_present() {
@@ -55,7 +56,11 @@ impl Memory for CartridgePrgMemory {
 
     fn write(&mut self, addr: u16, val: u8) -> Result<(), Box<dyn Error>> {
         let mut cartridge = self.0.borrow_mut();
-        cartridge.mapper.cpu_write(addr, val, &|a, v| Err("Write error".into()))
+        let mut mirroring = &mut cartridge.nt_mirroring as *mut [usize; 4];
+
+        cartridge.mapper.cpu_write(addr, val,
+                                   &|a, v| Err("Write error".into()),
+                                   &mut |v| Ok(unsafe { mirroring.as_mut().unwrap().copy_from_slice(&v) }))
     }
 }
 
@@ -75,7 +80,8 @@ impl Memory for CartridgeChrMemory {
     }
 
     fn write(&mut self, addr: u16, val: u8) -> Result<(), Box<dyn Error>> {
-        let cartridge = self.0.borrow();
-        panic!("CHR ROM is read-only.");
+        let mut cartridge = self.0.borrow_mut();
+        cartridge.mapper.ppu_write(addr, val,
+                                   &|a, v| Err("Write error".into()))
     }
 }

@@ -35,20 +35,24 @@ impl Joypad {
     pub fn press(&mut self, keys: u8) {
         self.pressed_keys |= keys;
     }
+    pub fn release(&mut self, keys: u8) {
+        self.pressed_keys &= !keys;
+    }
+
 }
 
 
 #[derive(Debug)]
 pub struct ControllerMemory {
     pads: *mut [Joypad; 2],
-    sticky: bool,
+    strobe: bool,
 }
 
 impl ControllerMemory {
     pub fn new(pads: *mut [Joypad; 2]) -> Self {
         Self {
             pads,
-            sticky: false,
+            strobe: false,
         }
     }
 
@@ -79,8 +83,8 @@ impl Memory for ControllerMemory {
                 let mut v = 1;
                 if pad.shifts < 8 {
                     v = (pad.pressed_keys >> pad.shifts) & 1;
-                    if !self.sticky {
-                        pad.shifts = pad.shifts.wrapping_add(1);
+                    if !self.strobe {
+                        pad.shifts += 1;
                     }
                 }
                 Ok(v)
@@ -92,8 +96,8 @@ impl Memory for ControllerMemory {
     fn write(&mut self, addr: u16, val: u8) -> Result<(), Box<dyn Error>> {
         match addr {
             0x4016 => {
-                self.sticky = val & 1 != 0;
-                if self.sticky {
+                self.strobe = val & 1 != 0;
+                if self.strobe {
                     self.joypads_mut().iter_mut().for_each(|pad| pad.shifts = 0);
                 }
                 Ok(())

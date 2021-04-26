@@ -15,6 +15,7 @@ use daisyretro::emulator::famicom::famicom::Famicom;
 use std::env;
 use std::num::Wrapping;
 use daisyretro::emulator::famicom::joypad::Joypad;
+use std::collections::HashMap;
 
 pub fn main() -> Result<(), Box<dyn Error>> {
     let rom_path = env::args().skip(1).next().unwrap();
@@ -56,72 +57,67 @@ pub fn main() -> Result<(), Box<dyn Error>> {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
+    let mut key_map = HashMap::new();
+    key_map.insert(Keycode::Up, Joypad::BUTTON_UP);
+    key_map.insert(Keycode::W, Joypad::BUTTON_UP);
+    key_map.insert(Keycode::Down, Joypad::BUTTON_DOWN);
+    key_map.insert(Keycode::S, Joypad::BUTTON_DOWN);
+    key_map.insert(Keycode::Left, Joypad::BUTTON_LEFT);
+    key_map.insert(Keycode::A, Joypad::BUTTON_LEFT);
+    key_map.insert(Keycode::Right, Joypad::BUTTON_RIGHT);
+    key_map.insert(Keycode::D, Joypad::BUTTON_RIGHT);
+    key_map.insert(Keycode::Return, Joypad::BUTTON_START);
+    key_map.insert(Keycode::Return2, Joypad::BUTTON_START);
+    key_map.insert(Keycode::LShift, Joypad::BUTTON_SELECT);
+    key_map.insert(Keycode::RShift, Joypad::BUTTON_SELECT);
+    key_map.insert(Keycode::Z, Joypad::BUTTON_B);
+    key_map.insert(Keycode::Comma, Joypad::BUTTON_B);
+    key_map.insert(Keycode::X, Joypad::BUTTON_A);
+    key_map.insert(Keycode::Period, Joypad::BUTTON_A);
+
+
     let cpu_cycles_per_frame = 29780;
+    let mut remain = 0;
 
     'running: loop {
         // i = (i + 1) % 255;
         // canvas.set_draw_color(Color::RGB(i, 64, 255 - i));
         // canvas.clear();
         let frame_start_instant = Instant::now();
-        famicom.as_mut().joypads_mut()[0].set(0);
-        famicom.as_mut().joypads_mut()[1].set(0);
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } |
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'running;
                 }
-                Event::KeyDown { keycode: Some(Keycode::Up), .. } |
-                Event::KeyDown { keycode: Some(Keycode::W), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_UP);
+                Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
+                    famicom.as_mut().reset();
                 }
-                Event::KeyDown { keycode: Some(Keycode::Down), .. } |
-                Event::KeyDown { keycode: Some(Keycode::S), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_DOWN);
+                Event::KeyDown { keycode: Some(key), .. } => {
+                    if let Some(k) = key_map.get(&key) {
+                        famicom.as_mut().joypads_mut()[0].press(*k);
+                    }
                 }
-                Event::KeyDown { keycode: Some(Keycode::Left), .. } |
-                Event::KeyDown { keycode: Some(Keycode::A), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_LEFT);
-                }
-                Event::KeyDown { keycode: Some(Keycode::Right), .. } |
-                Event::KeyDown { keycode: Some(Keycode::D), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_RIGHT);
-                }
-                Event::KeyDown { keycode: Some(Keycode::Space), .. } |
-                Event::KeyDown { keycode: Some(Keycode::Return), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_START);
-                }
-                Event::KeyDown { keycode: Some(Keycode::LShift), .. } |
-                Event::KeyDown { keycode: Some(Keycode::RShift), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_SELECT);
-                }
-                Event::KeyDown { keycode: Some(Keycode::Z), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_B);
-                }
-                Event::KeyDown { keycode: Some(Keycode::X), .. } => {
-                    famicom.as_mut().joypads_mut()[0].press(Joypad::BUTTON_A);
+                Event::KeyUp { keycode: Some(key), .. } => {
+                    if let Some(k) = key_map.get(&key) {
+                        famicom.as_mut().joypads_mut()[0].release(*k);
+                    }
                 }
                 _ => {}
             }
         }
         // The rest of the game loop goes here...
-        let remain = famicom.as_mut().cpu_mut().run(cpu_cycles_per_frame)?;
+        remain = famicom.as_mut().cpu_mut().run(cpu_cycles_per_frame * 2)?;
         if remain != 0 {
             println!("Remain cycles {}", remain);
         }
-        //
-        // for tile_y in 0..30usize {
-        //     for tile_x in 0..32usize {
-        //         let tile_id = tile_y * 32 + tile_x;
-        //         famicom.as_mut().ppu_mut().render_tile(0, tile_id as u8, &mut frame, tile_x * 8, tile_y * 8)?;
-        //     }
-        // }
+
         let frame = &famicom.as_mut().ppu_mut().screen;
         let mut update = true;
         if update {
             texture.update(None, frame, 256 * 3).unwrap();
-            //famicom.as_mut().ppu_mut().render_screen(&mut frame2)?;
-            //texture.update(None, &frame2, 256 * 3).unwrap();
+            // famicom.as_mut().ppu_mut().render_screen(&mut frame2)?;
+            // texture.update(None, &frame2, 256 * 3).unwrap();
             canvas.copy(&texture, None, None).unwrap();
             canvas.present();
         }

@@ -117,10 +117,6 @@ impl InesRom {
         file.read_exact(&mut rom.chr_rom)?;
         file.read_to_end(&mut rom.extra_bytes)?;
 
-        if rom.header.get_mapper_type() != 0 {
-            return Err(format!("Unsupported mapper type {}", rom.header.get_mapper_type()).into());
-        }
-
         Ok(rom)
     }
 }

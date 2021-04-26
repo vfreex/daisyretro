@@ -50,6 +50,7 @@ pub struct PPURegisters {
 
 impl PPURegisters {
     const PPU_STATUS_VBLANK: u8 = 1 << 7;
+    const PPU_STATUS_SPRITE_0_HIT: u8 = 1 << 6;
     pub fn new() -> Self {
         Self {
             ppu_ctrl: 0,
@@ -160,9 +161,9 @@ impl PPU {
                 let tile_high = self.bus.read(tile_addr + 8)?;
                 let color_low = (tile_low >> (7 - col_in_tile)) & 1;
                 let color_high = (tile_high >> (7 - col_in_tile)) & 1;
-                let color_index = (color_high << 1) | color_low;
+                let mut color_index = (color_high << 1) | color_low;
 
-                let palette = if color_index > 0 {
+                let mut cur_palette = if color_index > 0 {
                     let tile_group_x = tile_x / 4;
                     let tile_group_y = tile_y / 4;
                     let tile_group = tile_group_y * 8 + tile_group_x;
@@ -178,8 +179,55 @@ impl PPU {
                 } else {
                     0
                 };
+                let mut color_addr = 0x3f00 | ((cur_palette << 2) | color_index) as u16;
 
-                let color_addr = 0x3f00 | ((palette << 2) | color_index) as u16;
+                let mut spr_px = 0;
+                for spr in 0..64usize {
+                    let spr_y = self.spr_ram[spr * 4] as usize + 1;
+                    let spr_height;
+                    if self.registers.ppu_ctrl >> 5 & 1 != 0 {
+                        spr_height = 16;
+                    } else {
+                        spr_height = 8;
+                    }
+                    if scanline < spr_y || scanline >= spr_y + spr_height {
+                        continue; // not in range
+                    }
+                    let mut dy = scanline - spr_y;
+                    let spr_x = self.spr_ram[spr * 4 + 3] as usize;
+                    if dot < spr_x as usize || dot >= spr_x as usize + 8 {
+                        continue; // not in range
+                    }
+                    let mut dx = dot - spr_x;
+                    let spr_tile = self.spr_ram[spr * 4 + 1];
+                    let spr_attr = self.spr_ram[spr * 4 + 2];
+                    let bank = self.registers.ppu_ctrl >> 3 & 1;
+                    let addr = 0x1000 * bank as u16 | spr_tile as u16 * 16;
+                    let palette = spr_attr & 3;
+                    let bg_pri = spr_attr >> 5 & 1 != 0;
+                    let hori_flip = spr_attr >> 6 & 1 != 0;
+                    let vert_flip = spr_attr >> 7 & 1 != 0;
+                    if bg_pri && color_index != 0 {
+                        continue; // sprite px is behind bg
+                    }
+                    if hori_flip {
+                        dx = 7 - dx;
+                    }
+                    if vert_flip {
+                        dy = spr_height - 1 - dy;
+                    }
+
+                    let spr_low = self.bus.read(addr + dy as u16)?;
+                    let spr_high = self.bus.read(addr + 8 + dy as u16)?;
+                    spr_px = spr_low >> 7 - dx & 1 | spr_high >> 7 - dx & 1 << 1;
+                    if spr_px != 0 {
+                        color_index = spr_px;
+                        cur_palette = palette;
+                        color_addr = 0x3f10 | ((cur_palette << 2) | color_index) as u16;
+                        break;
+                    }
+                }
+
                 let color = self.bus.read(color_addr)?;
                 let rgb = Self::PALETTE_COLORS[color as usize];
 
@@ -192,11 +240,14 @@ impl PPU {
         Ok(())
     }
 
-    pub fn run(&mut self, steps: usize) -> Result<(), Box<dyn Error>> {
+    pub fn run(&mut self, steps: usize) -> Result<(usize), Box<dyn Error>> {
         for i in 0..steps {
+            if self.request_nmi {
+                return Ok(steps - i);
+            }
             self.step()?;
         }
-        Ok(())
+        Ok((0))
     }
 
     fn fetch_bg_tile(&mut self, dot: usize) -> Result<(), Box<dyn Error>> {
@@ -273,8 +324,24 @@ impl PPU {
         let x = dot - 2;
         let y = scanline;
 
-        let mut bitmap = 0;
+        let mut bg_pixel = 0;
+
+        if self.registers.ppu_mask & 8 != 0 && (x >= 8 || self.registers.ppu_mask & 2 != 0) {
+            let fine_x = self.registers.x;
+            let bitmap_low = ((self.registers.bg_pattern_low_shift << fine_x >> 15) & 1) as u8;
+            let bitmap_high = ((self.registers.bg_pattern_high_shift << fine_x >> 15) & 1) as u8;
+            bg_pixel = bitmap_high << 1 | bitmap_low;
+
+            if bg_pixel != 0 { // not universal bg color
+                let attr_low = ((self.registers.bg_attr_low_shift << fine_x >> 15) & 1) as u8;
+                let attr_high = ((self.registers.bg_attr_high_shift << fine_x >> 15) & 1) as u8;
+                let palette = attr_high << 1 | attr_low;
+                bg_pixel |= palette << 2;
+            }
+        }
+
         let mut bg_priority = false;
+        let mut spr_pixel = 0;
 
         if self.registers.ppu_mask & 16 != 0 && (x >= 8 || self.registers.ppu_mask & 4 != 0) {
             for spr_idx in 0..self.active_sprite_count {
@@ -284,38 +351,31 @@ impl PPU {
                     continue;
                 }
                 let attr = sprite.attr;
-                let mut dx = x as u8 -  sprite.x;
+                let mut dx = x as u8 - sprite.x;
                 if attr & 64 != 0 { // horizontal flip
                     dx = 7 - dx;
                 }
                 let color_low = sprite.pattern_low >> (7 - dx) & 1;
                 let color_high = sprite.pattern_high >> (7 - dx) & 1;
-                let mut color = color_high << 1 | color_low;
+                spr_pixel = color_high << 1 | color_low;
 
-                if color != 0 { // sprite pixel is opaque
+                if spr_pixel != 0 { // sprite pixel is opaque
                     let palette = (attr as u8 & 3);
-                    color |= palette << 2 | 0x10;
-                    bitmap = color;
+                    spr_pixel |= palette << 2 | 0x10;
                     bg_priority = attr & 32 != 0;
+                    if spr_idx == 0 && bg_pixel != 0 && x < 255 {
+                        self.registers.ppu_status |= PPURegisters::PPU_STATUS_SPRITE_0_HIT; // set Sprite0Hit
+                    }
                     break; // the sprite data that occurs first will overlap any other sprites after it
                 }
             }
         }
 
-        if self.registers.ppu_mask & 8 != 0 && (x >= 8 || self.registers.ppu_mask & 2 != 0) && (bg_priority || bitmap == 0) {
-            let fine_x = self.registers.x;
-            let bitmap_low = ((self.registers.bg_pattern_low_shift << fine_x >> 15) & 1) as u8;
-            let bitmap_high = ((self.registers.bg_pattern_high_shift << fine_x >> 15) & 1) as u8;
-            let mut bg_pixel = bitmap_high << 1 | bitmap_low;
-
-            if bg_pixel != 0 { // not universal bg color
-                let attr_low = ((self.registers.bg_attr_low_shift << fine_x >> 15) & 1) as u8;
-                let attr_high = ((self.registers.bg_attr_high_shift << fine_x >> 15) & 1) as u8;
-                let attr = attr_high << 1 | attr_low;
-                bg_pixel |= attr << 2;
-                bitmap = bg_pixel;
-            }
-        }
+        let mut bitmap = if spr_pixel != 0 && (!bg_priority || bg_pixel == 0) {
+            spr_pixel
+        } else {
+            bg_pixel
+        };
 
         let color_addr = 0x3f00 | bitmap as u16;
         let color = self.bus.read(color_addr)?;
@@ -486,8 +546,9 @@ impl PPU {
             261 => { // pre-render line
                 match dot {
                     1 => { // clear NMI
-                        self.registers.ppu_status &= !PPURegisters::PPU_STATUS_VBLANK;
+                        self.registers.ppu_status &= !(PPURegisters::PPU_STATUS_VBLANK | PPURegisters::PPU_STATUS_SPRITE_0_HIT);
                         self.request_nmi = false;
+                        println!("VBLANK ended");
                     }
                     _ => {}
                 }
@@ -498,6 +559,7 @@ impl PPU {
                     if self.registers.ppu_ctrl & 0x80 != 0 {
                         self.request_nmi = true;
                     }
+                    println!("VBLANK started");
                 }
             }
             _ => {}
@@ -645,11 +707,11 @@ impl Memory for PPUMemory {
 #[derive(Debug)]
 pub struct CiRam {
     data: [u8; 0x1000],
-    mirroring_map: [usize; 4],
+    mirroring_map: *const [usize; 4],
 }
 
 impl CiRam {
-    pub fn new(mirroring_map: [usize; 4]) -> Self {
+    pub fn new(mirroring_map: *const [usize; 4]) -> Self {
         Self {
             data: [0; 0x1000],
             mirroring_map,
@@ -658,7 +720,7 @@ impl CiRam {
 
     fn map_addr(&self, addr: u16) -> usize {
         let logical = (addr & 0xfff) / 0x400;
-        let physical = self.mirroring_map[logical as usize];
+        let physical = unsafe { self.mirroring_map.as_ref().unwrap()[logical as usize] };
         return (physical * 0x400) | (addr as usize & 0x3ff);
     }
 }
@@ -688,10 +750,7 @@ impl PaletteTable {
     fn index(addr: u16) -> usize {
         let index = addr as usize & 0x1f;
         match addr & 0x1f {
-            0x10 => 0x00,
-            0x14 => 0x04,
-            0x18 => 0x0c,
-            0x1f => 0x0f,
+            0x10 | 0x14 | 0x18 | 0x1c => index & !0x10,
             _ => index,
         }
     }

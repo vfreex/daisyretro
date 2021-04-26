@@ -81,8 +81,8 @@ impl Famicom {
         let cartridge = Rc::new(RefCell::new(Cartridge::from_ines(rom)));
         this.cpu.bus.add_mapping(0x4020, 0xbfe0, MAPPING_MODE_READ_WRITE, Box::new(CartridgePrgMemory::new(cartridge.clone())));
 
-        this.ppu.bus.add_mapping(0x0000, 0x2000, MAPPING_MODE_READ, Box::new(CartridgeChrMemory::new(cartridge.clone())));
-        let nt_mirroring = cartridge.borrow().nt_mirroring;
+        this.ppu.bus.add_mapping(0x0000, 0x2000, MAPPING_MODE_READ_WRITE, Box::new(CartridgeChrMemory::new(cartridge.clone())));
+        let nt_mirroring = &cartridge.borrow().nt_mirroring;
         this.ppu.bus.add_mapping(0x2000, 0x1f00, MAPPING_MODE_READ_WRITE, Box::new(CiRam::new(nt_mirroring)));
         this.ppu.bus.add_mapping(0x3f00, 0x100, MAPPING_MODE_READ_WRITE, Box::new(PaletteTable::new()));
 

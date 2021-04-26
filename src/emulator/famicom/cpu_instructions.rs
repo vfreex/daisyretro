@@ -495,7 +495,7 @@ impl CPU {
     fn cmp(&mut self, addr: Ptr) -> Result<(), Box<dyn Error>> {
         let operand = self.bus.read(addr)?;
         let result = self.registers.A.wrapping_sub(operand);
-        self.registers.P.set_flag_value(ProcessorStatus::FLAG_CARRY, result & 0x80 == 0);
+        self.registers.P.set_flag_value(ProcessorStatus::FLAG_CARRY, self.registers.A >= operand);
         self.set_zero_flag(result);
         self.set_negative_flag(result);
         Ok(())
@@ -503,7 +503,7 @@ impl CPU {
     fn cpx(&mut self, addr: Ptr) -> Result<(), Box<dyn Error>> {
         let operand = self.bus.read(addr)?;
         let result = self.registers.X.wrapping_sub(operand);
-        self.registers.P.set_flag_value(ProcessorStatus::FLAG_CARRY, result & 0x80 == 0);
+        self.registers.P.set_flag_value(ProcessorStatus::FLAG_CARRY, self.registers.X >= operand);
         self.set_zero_flag(result);
         self.set_negative_flag(result);
         Ok(())
@@ -511,7 +511,7 @@ impl CPU {
     fn cpy(&mut self, addr: Ptr) -> Result<(), Box<dyn Error>> {
         let operand = self.bus.read(addr)?;
         let result = self.registers.Y.wrapping_sub(operand);
-        self.registers.P.set_flag_value(ProcessorStatus::FLAG_CARRY, result & 0x80 == 0);
+        self.registers.P.set_flag_value(ProcessorStatus::FLAG_CARRY, self.registers.Y >= operand);
         self.set_zero_flag(result);
         self.set_negative_flag(result);
         Ok(())
@@ -734,7 +734,9 @@ impl CPU {
         Ok(())
     }
     fn brk(&mut self, addr: Ptr) -> Result<(), Box<dyn Error>> {
-        self.push_stack_u16(self.registers.PC)?;
+        // Regardless of what ANY 6502 documentation says, BRK is a 2 byte opcode.
+        // The first is #$00, and the second is a padding byte.
+        self.push_stack_u16(self.registers.PC.wrapping_add(1 ))?;
         let val = self.registers.P.0 | ProcessorStatus::FLAG_BREAK | ProcessorStatus::FLAG_ONE;
         self.push_stack(val)?;
         self.registers.P.set_flag(ProcessorStatus::FLAG_INTERRUPT_DISABLE);
@@ -745,7 +747,7 @@ impl CPU {
         let val = ProcessorStatus(self.pop_stack()?);
         // Two instructions (PLP and RTI) pull a byte from the stack and set all the flags. They ignore bits 5 and 4.
         // https://wiki.nesdev.com/w/index.php/Status_flags
-        self.registers.P = ProcessorStatus(val.0 & !ProcessorStatus::FLAG_BREAK | ProcessorStatus::FLAG_ONE);
+        self.registers.P = ProcessorStatus(val.0 | ProcessorStatus::FLAG_ONE);
         self.registers.PC = self.pop_stack_u16()?;
         Ok(())
     }
