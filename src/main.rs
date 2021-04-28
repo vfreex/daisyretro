@@ -16,9 +16,15 @@ use std::env;
 use std::num::Wrapping;
 use daisyretro::emulator::famicom::joypad::Joypad;
 use std::collections::HashMap;
+use log::{info, debug, trace};
+use env_logger::{Builder, Env};
+
 
 pub fn main() -> Result<(), Box<dyn Error>> {
+    Builder::new().parse_env(Env::default().filter_or("DAISYRETRO_LOG", "debug")).init();
+
     let rom_path = env::args().skip(1).next().unwrap();
+    info!("Loading {}...", rom_path);
     let rom = ines::InesRom::from_file(&rom_path)?;
     let mut famicom = Famicom::new_pinned();
 
@@ -109,7 +115,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         // The rest of the game loop goes here...
         remain = famicom.as_mut().cpu_mut().run(cpu_cycles_per_frame * 2)?;
         if remain != 0 {
-            println!("Remain cycles {}", remain);
+            trace!("Remain cycles {}", remain);
         }
 
         let frame = &famicom.as_mut().ppu_mut().screen;
@@ -124,7 +130,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
 
         let elapsed = frame_start_instant.elapsed();
         let duration_per_frame = Duration::new(0, 1_000_000_000 / 60);
-        println!("Frame takes {}/{}ms.", elapsed.as_millis(), duration_per_frame.as_millis());
+        debug!("Frame takes {}/{}ms.", elapsed.as_millis(), duration_per_frame.as_millis());
         if elapsed < duration_per_frame {
             let to_sleep = duration_per_frame - elapsed;
             ::std::thread::sleep(to_sleep);

@@ -188,11 +188,13 @@ impl CPU {
         let opcode = self.bus.read(pc)?;
         if let Some(ref op) = SUPPORTED_INSTRUCTIONS[opcode as usize] {
             debug_assert_eq!(op.opcode, opcode);
-            let op1 = self.bus.read(pc.wrapping_add(1))?;
-            let op2 = self.bus.read(pc.wrapping_add(2))?;
-            let dump_regs = format!("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
-                                    self.registers.A, self.registers.X, self.registers.Y, self.registers.P.0, self.registers.S);
-            //println!("{:04X}  {}  {}", pc, op.to_string(op1, op2), dump_regs);
+            if log::log_enabled!(log::Level::Trace) {
+                let op1 = self.bus.read(pc.wrapping_add(1))?;
+                let op2 = self.bus.read(pc.wrapping_add(2))?;
+                let dump_regs = format!("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+                                        self.registers.A, self.registers.X, self.registers.Y, self.registers.P.0, self.registers.S);
+                log::trace!("{:04X}  {}  {}", pc, op.to_string(op1, op2), dump_regs);
+            }
             Ok(op)
         } else {
             Err(format!("Unsupported opcode ${:02x} at ${:04x}", opcode, pc).into())
@@ -207,7 +209,7 @@ impl CPU {
                     break;
                 }
                 self.bus.clear_nmi();
-                println!("about to handle NMI");
+                log::trace!("about to handle NMI");
                 let cycles = self.interrupt(Self::IV_NMI)?;
                 remain -= cycles;
                 self.bus.tick(cycles);
@@ -227,10 +229,11 @@ impl CPU {
     }
     pub fn step(&mut self) -> Result<usize, Box<dyn Error>> {
         if self.bus.nmi_requested() {
+            log::trace!("about to handle NMI");
             self.bus.clear_nmi();
             self.interrupt(Self::IV_NMI)?;
             self.bus.tick(7);
-            return Ok(2); // FIXME: dummy cycle value
+            return Ok(7);
         }
         let &Instruction { addressing_mode, cycles, handler, .. } = self.decode_opcode()?;
         self.registers.PC = self.registers.PC.wrapping_add(1);

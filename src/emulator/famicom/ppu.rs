@@ -548,7 +548,7 @@ impl PPU {
                     1 => { // clear NMI
                         self.registers.ppu_status &= !(PPURegisters::PPU_STATUS_VBLANK | PPURegisters::PPU_STATUS_SPRITE_0_HIT);
                         self.request_nmi = false;
-                        println!("VBLANK ended");
+                        log::trace!("VBLANK ended");
                     }
                     _ => {}
                 }
@@ -559,7 +559,7 @@ impl PPU {
                     if self.registers.ppu_ctrl & 0x80 != 0 {
                         self.request_nmi = true;
                     }
-                    println!("VBLANK started");
+                    log::trace!("VBLANK started");
                 }
             }
             _ => {}
@@ -598,7 +598,7 @@ impl Memory for PPUMemory {
             0x2002 => { // PPU_STATUS
                 let r = ppu.registers.ppu_status;
                 if r & PPURegisters::PPU_STATUS_VBLANK != 0 {
-                    println!("VBLANK notified.");
+                    log::trace!("VBLANK flag fetched.");
                 }
                 ppu.registers.ppu_status &= !PPURegisters::PPU_STATUS_VBLANK;
                 ppu.registers.w = false;
